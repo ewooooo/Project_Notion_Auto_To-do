@@ -29,6 +29,9 @@ active_time_attribute_name = 'Active Time'
 relation_attribute_name = 'target'
 active_attribute_name = 'active'
 InTime_attribute_name = 'In Time'
+
+equals_type = ['title', 'rich_text', 'url', 'email', 'phone', 'number','checkbox','select','date', 'created_time', 'last_edited_time']
+contains_type= ['multi_select','People','relation']
 ###################################################################################################################
 
 # 타겟쪽 relation 중 rule과 연결된 속성 id 추출
@@ -93,7 +96,76 @@ if res.status_code == 200:
                 res = requests.post(URL + 'pages', headers=post_headers,data=json.dumps(data))
 
         elif rule_dict[action_attribute_name]['select']['name'] == 'Modify':
-            pass #다시 짜야함.
+            # pair 의 < 만 사용 > 무시하고 뒤에서 불러옴
+            if rule_dict[pair_attribute_name]['rich_text'][0]['plain_text'][0] != '<':
+                continue
+
+            # pair target id 받아오기 _ 어떤 항목을 어떻게 바꿀지에 대한 rule : pair
+            pair_num = rule_dict[pair_attribute_name]['rich_text'][0]['plain_text'][1:]
+            pair_target_id_list = find_pair_target_id_list(rule_list,pair_num)
+
+
+            # 바꿀 항목 받아오기
+            change_properties = {}
+            for pair_target_id in pair_target_id_list:
+                page_properties = get_page(pair_target_id)
+
+                # rule->target의 비어있는 칸은 영향을 주지 않기 위해 제거
+                delete_key = []
+                for property_key in page_properties.keys():
+                    if type(page_properties[property_key][page_properties[property_key]['type']]) == list and len(
+                            page_properties[property_key][page_properties[property_key]['type']]) == 0:
+                        delete_key.append(property_key)
+                    if page_properties[property_key]['type'] == 'checkbox':
+                        delete_key.append(property_key)
+                    if page_properties[property_key]['type'] == 'title':
+                        delete_key.append(property_key)
+
+                for dKey in delete_key:
+                    del page_properties[dKey]
+                change_properties.update(page_properties)
+
+            # rule에 만족하는 Qurey filter 찾기
+            # 저장할 리스트 채우기
+            for create_target_dict in rule_dict[relation_attribute_name]['relation']:
+                page_properties = get_page(create_target_dict['id'])
+
+                # rule->target의 비어있는 칸은 영향을 주지 않기 위해 제거
+                query_filter_list = []
+                for property_key in page_properties.keys():
+                    if type(page_properties[property_key][page_properties[property_key]['type']]) == list and len(page_properties[property_key][page_properties[property_key]['type']])==0:
+                        continue
+                    if page_properties[property_key]['type'] == 'checkbox':
+                        continue
+                    if page_properties[property_key]['type'] == 'title':
+                        continue
+                    if page_properties[property_key]['type'] in equals_type:
+                        query_filter = {"property": property_key, page_properties[property_key]['type']:{
+                            'equals': page_properties[property_key][page_properties[property_key]['type']]['name']}}
+                        query_filter_list.append(query_filter)
+                    elif page_properties[property_key]['type'] in contains_type:
+                        for content in page_properties[property_key][page_properties[property_key]['type']]:
+                            query_filter = {"property": property_key, page_properties[property_key]['type']: {
+                                'contains': content['name']}}
+                            query_filter_list.append(query_filter)
+                    else :
+                        print("error - query filter")
+
+                data = {'filter' : {'and': query_filter_list}}
+                res = requests.post(URL + 'databases/' + target_table_id + '/query', headers=post_headers,data=json.dumps(data))
+                for page_data in res.json()['results']:
+
+                    state = False
+                    for pKey in page_data["properties"].keys():
+                        if page_data["properties"][pKey]['id'] == target_relation_attribute_id:
+                            if len(page_data["properties"][pKey]['relation']) != 0:
+                                state = True
+                                break
+                    if state:
+                        continue
+                    data = {"properties": change_properties}
+                    print(page_data['id'])
+                    res = requests.patch(URL + 'pages/' + page_data['id'], headers=post_headers, data=json.dumps(data))
 
         else:
             print('error: rule-action')
