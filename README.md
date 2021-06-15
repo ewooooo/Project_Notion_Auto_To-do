@@ -100,4 +100,4 @@ Template Auto rule : [https://www.notion.so/ewooooo/To-do_API_Auto-1fbcb6e016614
     ```
 
 ---
-
+- 나머지 속성은 임의 변경 가능
